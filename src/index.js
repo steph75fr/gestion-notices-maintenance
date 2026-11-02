@@ -23,6 +23,10 @@ h1{font-size:clamp(1.6rem,4vw,2.2rem)}h2{font-size:1.2rem}.muted{color:#596579}
 a.button{display:inline-block;background:#155bb4;color:white;padding:10px 15px;border-radius:8px;text-decoration:none}
 a{color:#155bb4}small{color:#64748b}.tag{background:#e9f1ff;padding:4px 8px;border-radius:7px;font-size:.85rem}
 nav{margin-top:12px}nav a{margin-right:18px}
+.hero{text-align:center;padding:28px 16px}.hero-icon{font-size:3rem}.scan-button{border:0;border-radius:10px;background:#155bb4;color:#fff;padding:15px 24px;font-size:1.05rem;cursor:pointer}
+input[type=search]{width:100%;padding:14px;border:1px solid #b9c6d7;border-radius:9px;font:inherit}
+#camera-box{display:none;margin-top:16px}#camera-box video{max-width:100%;width:420px;border-radius:10px;background:#111}
+#scan-status{min-height:1.5em}.admin-link{font-size:.9rem}
 </style></head><body><header><strong><a href="/">Gestion Notices & Équipements</a></strong><nav><a href="/">Accueil</a><a href="/admin">Administration (aperçu)</a></nav></header>
 <main>${content}</main></body></html>`;
 const page404 = () => new Response(shell("Introuvable", '<h1>Page introuvable</h1><a href="/">Retour à l’accueil</a>'), { status:404, headers:{"content-type":"text/html; charset=utf-8"}});
@@ -32,8 +36,79 @@ export default {
     const url = new URL(request.url);
     if (request.method !== "GET") return new Response("Méthode non autorisée", {status:405});
     if (url.pathname === "/") {
-      const cards = models.map(m => `<article class="card"><span class="tag">${escapeHtml(m.category)}</span><h2>${escapeHtml(m.name)}</h2><p>${escapeHtml(m.brand)}</p><a href="/m/${encodeURIComponent(m.id)}">Consulter le modèle</a></article>`).join("");
-      return response(shell("Accueil", `<h1>Bibliothèque de notices</h1><p class="muted">Prototype avec données fictives. Les PDF et QR codes seront ajoutés lors des prochaines étapes.</p><div class="grid">${cards}</div>`));
+      const cards = models.map(m => `<article class="card model-card" data-search="${escapeHtml((m.name+" "+m.brand+" "+m.category).toLocaleLowerCase("fr"))}"><span class="tag">${escapeHtml(m.category)}</span><h2>${escapeHtml(m.name)}</h2><p>${escapeHtml(m.brand)}</p><a href="/m/${encodeURIComponent(m.id)}">Consulter la fiche</a></article>`).join("");
+      const home = `
+      <section class="hero">
+        <div class="hero-icon" aria-hidden="true">❄️</div>
+        <h1>Notices &amp; Équipements</h1>
+        <p class="muted">Retrouvez facilement la notice d'utilisation de votre matériel.</p>
+        <div class="card">
+          <h2>Besoin d'une notice ?</h2>
+          <p>Scannez le QR code présent sur votre équipement.</p>
+          <button id="scan-start" class="scan-button" type="button">📷 Scanner un QR code</button>
+          <div id="camera-box"><video id="scan-video" playsinline muted autoplay aria-label="Caméra de scan"></video><p><button id="scan-stop" type="button">Arrêter la caméra</button></p></div>
+          <p id="scan-status" role="status" class="muted"></p>
+          <small>Vous pouvez aussi scanner directement avec l'appareil photo de votre téléphone.</small>
+        </div>
+      </section>
+      <section aria-labelledby="catalogue-title">
+        <h2 id="catalogue-title">Rechercher un matériel</h2>
+        <label for="model-search">Nom, marque ou catégorie</label>
+        <input type="search" id="model-search" placeholder="Ex. : télécommande, climatisation…" autocomplete="off">
+        <p id="search-empty" hidden>Aucun modèle trouvé.</p>
+        <div class="grid" id="models-grid">${cards}</div>
+      </section>
+      <p class="muted" style="margin-top:30px">Prototype de démonstration : matériels fictifs, notices PDF non encore disponibles.</p>
+      <p><a class="admin-link" href="/admin">🔒 Administration (aperçu non sécurisé)</a></p>
+      <script>
+      (() => {
+        const search = document.getElementById('model-search');
+        const cards = [...document.querySelectorAll('.model-card')];
+        search.addEventListener('input', () => {
+          const q = search.value.trim().toLocaleLowerCase('fr');
+          let count = 0;
+          for (const card of cards) { const match = card.dataset.search.includes(q); card.hidden = !match; if (match) count++; }
+          document.getElementById('search-empty').hidden = count !== 0;
+        });
+        const start = document.getElementById('scan-start');
+        const stop = document.getElementById('scan-stop');
+        const box = document.getElementById('camera-box');
+        const video = document.getElementById('scan-video');
+        const status = document.getElementById('scan-status');
+        let stream = null, active = false;
+        const finish = () => { active = false; if(stream) stream.getTracks().forEach(t => t.stop()); stream = null; video.srcObject = null; box.style.display = 'none'; };
+        stop.addEventListener('click', finish);
+        start.addEventListener('click', async () => {
+          if (!navigator.mediaDevices?.getUserMedia || !('BarcodeDetector' in window)) {
+            status.textContent = "Le scan intégré n'est pas disponible sur ce navigateur. Utilisez l'appareil photo de votre téléphone pour scanner l'étiquette.";
+            return;
+          }
+          try {
+            const detector = new BarcodeDetector({formats:['qr_code']});
+            stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+            video.srcObject = stream; box.style.display = 'block'; active = true;
+            status.textContent = 'Placez le QR code devant la caméra.';
+            await video.play();
+            while(active) {
+              const codes = await detector.detect(video);
+              if (codes.length) {
+                const target = new URL(codes[0].rawValue, location.origin);
+                if (target.origin === location.origin && /^\\/(m|e)\\/[a-zA-Z0-9_-]+$/.test(target.pathname)) {
+                  finish(); location.assign(target.pathname); return;
+                }
+                status.textContent = "Ce QR code ne correspond pas à une fiche de cette application.";
+              }
+              await new Promise(resolve => setTimeout(resolve, 350));
+            }
+          } catch (error) {
+            status.textContent = "Impossible d'utiliser la caméra. Vérifiez les autorisations ou utilisez l'appareil photo du téléphone.";
+            finish();
+          }
+        });
+        window.addEventListener('pagehide', finish);
+      })();
+      </script>`;
+      return response(shell("Accueil", home));
     }
     if (url.pathname === "/admin") {
       const rows = equipment.map(e => {
