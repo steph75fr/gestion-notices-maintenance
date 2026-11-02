@@ -110,12 +110,22 @@ export default {
       </script>`;
       return response(shell("Accueil", home));
     }
+    if (url.pathname === "/admin/localisations") {
+      const offices = [
+        {building:"Bâtiment Test",floor:"1",number:"101"},
+        {building:"Bâtiment Test",floor:"1",number:"102"},
+        {building:"Bâtiment Test",floor:"2",number:"201"}
+      ];
+      const floors = [...new Set(offices.map(o => o.floor))];
+      const lines = floors.map(floor => `<section class="card"><h2>Étage ${escapeHtml(floor)}</h2><div class="grid">${offices.filter(o => o.floor === floor).map(o => `<div class="card"><strong>Bureau ${escapeHtml(o.number)}</strong><p class="muted">${equipment.filter(e => e.floor === floor && e.office === o.number).length} équipement(s) fictif(s)</p></div>`).join("")}</div></section>`).join("");
+      return response(shell("Localisations — aperçu", `<a href="/admin">← Retour à l'administration</a><h1>Localisations</h1><p><strong>Mode démonstration :</strong> données entièrement fictives, en lecture seule et visibles publiquement. Ne saisissez aucune donnée réelle.</p><div class="grid"><div class="card"><strong>1</strong><p>Bâtiment fictif</p></div><div class="card"><strong>${floors.length}</strong><p>Étages</p></div><div class="card"><strong>${offices.length}</strong><p>Bureaux</p></div></div><h2>Bâtiment Test</h2>${lines}<p class="muted">La création, la modification, la suppression et l'import Excel seront disponibles après mise en place de l'authentification et de la base de données.</p>`));
+    }
     if (url.pathname === "/admin") {
       const rows = equipment.map(e => {
         const m = models.find(x => x.id === e.modelId);
         return `<tr><td style="padding:10px;border-bottom:1px solid #ddd"><a href="/e/${encodeURIComponent(e.id)}">${escapeHtml(e.id)}</a></td><td style="padding:10px;border-bottom:1px solid #ddd">${escapeHtml(m.name)}</td><td style="padding:10px;border-bottom:1px solid #ddd">${escapeHtml(e.building)} / ${escapeHtml(e.floor)} / ${escapeHtml(e.office)}</td></tr>`;
       }).join("");
-      return response(shell("Administration — aperçu", `<h1>Inventaire — aperçu</h1><p><strong>Attention :</strong> cette page est publique et en lecture seule. Elle contient uniquement des données fictives. Ne pas y saisir de données réelles.</p><div class="card" style="overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th align="left">Identifiant</th><th align="left">Modèle</th><th align="left">Localisation fictive</th></tr></thead><tbody>${rows}</tbody></table></div><p class="muted">Gestion des comptes, imports, PDF et QR codes à développer.</p>`));
+      return response(shell("Administration — aperçu", `<h1>Administration — aperçu</h1><div class="card"><h2>Rubriques</h2><p><a class="button" href="/admin/localisations">🏢 Bâtiments, étages et bureaux</a></p><p class="muted">Matériels · Notices PDF · QR codes · Utilisateurs : à venir.</p></div><h2>Inventaire fictif</h2><p><strong>Attention :</strong> cette page est publique et en lecture seule. Elle contient uniquement des données fictives. Ne pas y saisir de données réelles.</p><div class="card" style="overflow:auto"><table style="width:100%;border-collapse:collapse"><thead><tr><th align="left">Identifiant</th><th align="left">Modèle</th><th align="left">Localisation fictive</th></tr></thead><tbody>${rows}</tbody></table></div><p class="muted">Gestion des comptes, imports, PDF et QR codes à développer.</p>`));
     }
     const parts = url.pathname.split("/").filter(Boolean);
     if (parts.length === 2 && parts[0] === "m") {
